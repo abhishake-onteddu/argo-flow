@@ -33,8 +33,10 @@ cluster: preflight ## Create the k3d cluster with audit logging enabled
 ## ------------------------------------------------------------- GitOps bootstrap
 bootstrap: cluster ## Cluster + install ArgoCD + sealed-secrets (the only imperative step)
 	$(KUBECTL) create namespace argocd --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	$(KUBECTL) apply -n argocd -f $(ARGOCD_URL)
-	$(KUBECTL) apply -f $(SEALED_URL)
+	# server-side apply: the ArgoCD CRDs are too big for the client-side
+	# last-applied-config annotation (256KB limit).
+	$(KUBECTL) apply --server-side --force-conflicts -n argocd -f $(ARGOCD_URL)
+	$(KUBECTL) apply --server-side --force-conflicts -f $(SEALED_URL)
 	$(KUBECTL) -n argocd rollout status deploy/argocd-repo-server --timeout=300s
 	$(KUBECTL) -n kube-system rollout status deploy/sealed-secrets-controller --timeout=180s
 	@echo
