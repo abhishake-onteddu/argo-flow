@@ -3,12 +3,16 @@
 # runbooks don't cover. It is NOT unlimited admin -- its blast radius is exactly the
 # runbook-l3-runner ClusterRole (pods/deployments/statefulsets/namespaces; NO
 # secrets, NO cluster-admin). Every kubectl call is RBAC-authorized against that SA
-# and recorded in the audit log, and it runs only after an L3 approval. The `review`
-# step prints the exact command + reason so the approver sees what they authorize
-# BEFORE resuming.
-# ponytail: guardrail is the l3-runner RBAC + approval gate, not command parsing.
-# To shrink the blast radius, tighten the runbook-l3-runner ClusterRole -- never add
-# secrets/* or wildcard verbs to it.
+# and recorded in the audit log, and it runs only after an L3 approval.
+#
+# Flow:  verify (server-side dry-run) -> suspend -> execute (real run)
+# The verify step appends `--dry-run=server` to the command: the API server
+# validates it (schema + admission + RBAC) and reports what it WOULD change,
+# without persisting anything. The approver reads that output at the gate, so they
+# approve a command they have seen previewed -- not a promise.
+# ponytail: guardrail is the l3-runner RBAC + approval gate + the dry-run preview,
+# not command parsing. Dry-run appends a flag, so it fits single kubectl mutations
+# best; read-only (get) or piped commands just report "not dry-run-compatible".
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -20,28 +24,40 @@ spec:
   entrypoint: main
   arguments:
     parameters:
-      # Read-only default. Override at submit time, e.g.:
+      # Override at submit time, e.g.:
       #   -p command='kubectl rollout restart deploy/demo-app -n runbook-demo-dev'
       - { name: command, value: "kubectl get deployments -A" }
       - { name: reason,  value: "unspecified" }
   templates:
     - name: main
       steps:
-        - - { name: review,   template: review }
+        - - { name: verify,   template: verify }     # dry-run preview (before the gate)
         - - { name: approval, template: await-approval }
-        - - { name: execute,  template: execute }
+        - - { name: execute,  template: execute }    # real run (after approval)
 
-    - name: review
+    - name: verify
       container:
         image: alpine/k8s:1.31.5
         command: [sh, -c]
         args:
           - |
-            echo "================ BREAK-GLASS: awaiting L3 approval ================"
+            set +e   # never fail here -- the approver decides at the gate
+            echo "============== BREAK-GLASS: verify before L3 approval =============="
             echo "reason : {{workflow.parameters.reason}}"
             echo "command: {{workflow.parameters.command}}"
             echo "runs as: runbook-l3-runner  (RBAC-bounded, audited)"
-            echo "=================================================================="
+            echo "------------- server-side dry-run (nothing is persisted) ----------"
+            {{workflow.parameters.command}} --dry-run=server
+            rc=$?
+            echo "-------------------------------------------------------------------"
+            if [ $rc -eq 0 ]; then
+              echo "DRY-RUN OK (exit 0): valid + authorized. Above is what it WOULD do."
+            else
+              echo "DRY-RUN exit $rc: read-only, not dry-run-compatible, or would be DENIED."
+              echo "Review carefully before approving."
+            fi
+            echo "==================================================================="
+            exit 0
 
     # THE GATE. Resume requires patch on workflows in argo-l3 -> L3 only.
     - name: await-approval
