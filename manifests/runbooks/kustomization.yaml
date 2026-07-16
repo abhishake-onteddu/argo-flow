@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# WorkflowTemplates in argo (L1/L2) and argo-l3 (L3); each carries its own namespace.
+resources:
+  - l1-get-pod-status.yaml
+  - l1-get-app-logs.yaml
+  - l2-restart-deployment.yaml
+  - l2-scale-deployment.yaml
+  - l3-maintenance.yaml
+  - l3-restart-statefulset.yaml
+  - l3-cleanup-stuck-pods.yaml
+  - l3-provision-namespace.yaml
+  - l3-run-command.yaml

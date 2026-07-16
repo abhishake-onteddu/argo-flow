@@ -1,0 +1,32 @@
+# L1 RUNBOOK -- read-only. No approval gate. Runs immediately.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: get-pod-status
+  namespace: argo
+  labels: { runbook.level: "l1" }
+spec:
+  serviceAccountName: runbook-l1-runner   # <-- PINNED. Submitter cannot override.
+  entrypoint: main
+  arguments:
+    parameters:
+      - { name: namespace, value: runbook-demo-dev }
+  templates:
+    - name: main
+      inputs:
+        parameters: [{ name: namespace }]
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            echo "=== Pods in {{inputs.parameters.namespace}} ==="
+            kubectl get pods -n {{inputs.parameters.namespace}} -o wide
+            echo
+            echo "=== Deployments ==="
+            kubectl get deploy -n {{inputs.parameters.namespace}}
+            echo
+            echo "=== Recent events ==="
+            kubectl get events -n {{inputs.parameters.namespace}} \
+              --sort-by=.lastTimestamp | tail -20

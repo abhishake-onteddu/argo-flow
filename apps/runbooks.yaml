@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: runbooks
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"   # after argo CRDs (wave 0) + argo-l3 ns (wave 1)
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:pt-vamshi/argo-flow.git
+    targetRevision: main
+    path: manifests/runbooks
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

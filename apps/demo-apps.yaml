@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-apps
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"   # runbook-demo-dev ns created in wave 1
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:pt-vamshi/argo-flow.git
+    targetRevision: main
+    path: manifests/demo-apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: runbook-demo-dev
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

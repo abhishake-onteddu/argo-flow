@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-workflows
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"   # CRDs + controller first
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:pt-vamshi/argo-flow.git
+    targetRevision: main
+    path: manifests/argo-workflows
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true     # the Argo install has large CRDs

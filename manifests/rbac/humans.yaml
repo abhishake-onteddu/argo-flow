@@ -1,0 +1,213 @@
+# =============================================================================
+# HUMAN IDENTITIES
+#
+# In production these map to Azure Entra ID app roles (runbooks-l1/l2/l3). Here
+# they are ServiceAccounts, because Argo Server in --auth-mode=client passes the
+# caller's bearer token straight through to the Kubernetes API. RBAC denials
+# are therefore enforced by the API server, and the audit log records the real
+# caller -- not a proxy ServiceAccount.
+#
+# Under --auth-mode=sso these ClusterRoles/Roles stay byte-for-byte identical;
+# the rbac-rule annotations below match the Entra security group Object ID (see the
+# sso block in workflow-controller-configmap.yaml and docs/entra-setup.md).
+# =============================================================================
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: l1-user
+  namespace: argo
+  annotations:
+    # Matches the Entra security group "L1" by Object ID (the `groups` claim holds
+    # GUIDs, not names). Add users to that Entra group to grant L1.
+    # L1 group: da9685fc-4f7a-4b8d-aec2-188338b1795b
+    workflows.argoproj.io/rbac-rule: "'da9685fc-4f7a-4b8d-aec2-188338b1795b' in groups"
+    workflows.argoproj.io/rbac-rule-precedence: "1"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: l2-approver
+  namespace: argo
+  annotations:
+    # L2 group: 2c23e798-8303-45f9-ba95-ec3cd362b63d
+    workflows.argoproj.io/rbac-rule: "'2c23e798-8303-45f9-ba95-ec3cd362b63d' in groups"
+    workflows.argoproj.io/rbac-rule-precedence: "2"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: l3-approver
+  namespace: argo
+  annotations:
+    # L3 group: 6faedd5d-be36-4c63-a7c9-57e7228aa423
+    workflows.argoproj.io/rbac-rule: "'6faedd5d-be36-4c63-a7c9-57e7228aa423' in groups"
+    workflows.argoproj.io/rbac-rule-precedence: "3"
+
+# =============================================================================
+# L1 -- can submit, can read. CANNOT resume.
+#
+# `argo resume` issues a PUT/PATCH against the Workflow object. Omitting
+# update/patch here is the entire approval gate. There is no separate
+# "approval" API in Argo; approval IS the RBAC permission to mutate a
+# suspended Workflow.
+# =============================================================================
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: runbooks-l1
+  namespace: argo
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflows"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtemplates"]
+    verbs: ["get", "list", "watch"]      # read only -- cannot repoint serviceAccountName
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtaskresults"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  # NOT granted: update, patch, delete on workflows  -> cannot resume
+  # NOT granted: update on workflowtemplates          -> cannot escalate runner
+  # NOT granted: secrets                              -> cannot read runner tokens
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: runbooks-l1, namespace: argo }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l1 }
+subjects:
+  - { kind: ServiceAccount, name: l1-user, namespace: argo }
+
+# =============================================================================
+# L2 -- everything L1 has, plus update/patch on workflows (i.e. resume).
+#
+# Scoped to the `argo` namespace with a Role, not a ClusterRole. This is what
+# stops L2 from approving L3 work: L3 workflows live in `argo-l3`, where L2
+# has no permissions at all.
+#
+# Worth understanding why: Kubernetes RBAC has no object-level granularity.
+# A `patch workflows` grant in a namespace applies to EVERY workflow in it.
+# There is no way to say "L2 may resume this workflow but not that one".
+# Namespace separation is therefore not defence-in-depth -- it is the ONLY
+# mechanism that makes "L2 cannot approve L3-only operations" true.
+# =============================================================================
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: runbooks-l2
+  namespace: argo
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflows"]
+    verbs: ["create", "get", "list", "watch", "update", "patch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtemplates"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: runbooks-l2, namespace: argo }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l2 }
+subjects:
+  - { kind: ServiceAccount, name: l2-approver, namespace: argo }
+
+# =============================================================================
+# L3 -- resume rights in BOTH namespaces.
+# =============================================================================
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: runbooks-l3
+  namespace: argo-l3
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflows"]
+    verbs: ["create", "get", "list", "watch", "update", "patch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtemplates"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: runbooks-l3, namespace: argo-l3 }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l3 }
+subjects:
+  - { kind: ServiceAccount, name: l3-approver, namespace: argo }
+---
+# L3 also inherits L2's rights in `argo`.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: runbooks-l3-in-argo, namespace: argo }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l2 }
+subjects:
+  - { kind: ServiceAccount, name: l3-approver, namespace: argo }
+---
+# L1 needs to be able to SUBMIT into argo-l3 (request an L3 op) without being
+# able to resume there. Create + read only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: runbooks-l3-requester
+  namespace: argo-l3
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflows"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtemplates"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: runbooks-l3-requester, namespace: argo-l3 }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l3-requester }
+subjects:
+  - { kind: ServiceAccount, name: l1-user, namespace: argo }
+  - { kind: ServiceAccount, name: l2-approver, namespace: argo }
+
+# =============================================================================
+# SA TOKEN SECRETS -- required for Argo Server SSO delegation.
+# In --auth-mode=sso, Argo maps the OIDC user to one of these SAs and then acts
+# AS it by using the SA's token. k8s >=1.24 no longer auto-creates token secrets,
+# so we declare them explicitly (the control plane fills in the token).
+#
+# The secret name MUST be `<service-account-name>.service-account-token` -- that
+# is the exact name Argo Server derives and looks up. A different name (e.g.
+# l1-user-token) is ignored and the mapping fails with "secret not found".
+# =============================================================================
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: l1-user.service-account-token
+  namespace: argo
+  annotations: { kubernetes.io/service-account.name: l1-user }
+type: kubernetes.io/service-account-token
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: l2-approver.service-account-token
+  namespace: argo
+  annotations: { kubernetes.io/service-account.name: l2-approver }
+type: kubernetes.io/service-account-token
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: l3-approver.service-account-token
+  namespace: argo
+  annotations: { kubernetes.io/service-account.name: l3-approver }
+type: kubernetes.io/service-account-token

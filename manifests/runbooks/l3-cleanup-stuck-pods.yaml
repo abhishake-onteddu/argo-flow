@@ -1,0 +1,71 @@
+# L3 RUNBOOK -- delete Failed/stuck pods in a namespace. L3-ONLY on purpose:
+# runbook-l3-runner has `pods: delete` CLUSTER-WIDE (a ClusterRoleBinding),
+# whereas L2's pod-delete is bound only inside runbook-demo-dev. So this runbook
+# can be pointed at ANY namespace -- that cluster-wide blast radius is the whole
+# reason it is an L3 operation and gated in argo-l3.
+#
+# It deletes only pods in phase=Failed (via --field-selector), so a healthy
+# namespace is a no-op. The precheck shows exactly what would be removed BEFORE
+# the approval gate, so the approver reviews a concrete list, not a promise.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: cleanup-stuck-pods
+  namespace: argo-l3
+  labels: { runbook.level: "l3" }
+spec:
+  serviceAccountName: runbook-l3-runner   # <-- PINNED.
+  entrypoint: main
+  arguments:
+    parameters:
+      - { name: namespace, value: runbook-demo-dev }
+  templates:
+    - name: main
+      steps:
+        - - { name: precheck,  template: precheck }
+        - - { name: approval,  template: await-approval }
+        - - { name: cleanup,   template: cleanup }
+        - - { name: verify,    template: verify }
+
+    - name: precheck
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.namespace}}
+            kubectl get ns "$NS" >/dev/null \
+              || { echo "FAIL: namespace $NS not found"; exit 1; }
+            echo "=== Failed pods that WILL be deleted on approval, in $NS ==="
+            kubectl get pods -n "$NS" --field-selector=status.phase=Failed \
+              -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,REASON:.status.reason
+            echo "(none listed above = nothing to clean; runbook is a safe no-op)"
+
+    # THE GATE. Resume requires patch on workflows in argo-l3 -> L3 only.
+    - name: await-approval
+      suspend: {}
+
+    - name: cleanup
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.namespace}}
+            # --ignore-not-found keeps this a no-op when nothing is Failed.
+            kubectl delete pods -n "$NS" --field-selector=status.phase=Failed --ignore-not-found
+            echo "cleanup complete in $NS"
+
+    - name: verify
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.namespace}}
+            echo "=== remaining Failed pods in $NS (should be none) ==="
+            kubectl get pods -n "$NS" --field-selector=status.phase=Failed \
+              -o custom-columns=NAME:.metadata.name,PHASE:.status.phase

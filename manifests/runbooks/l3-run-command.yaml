@@ -1,0 +1,58 @@
+# L3 BREAK-GLASS RUNBOOK -- runs an operator-supplied command as runbook-l3-runner.
+# Deliberately the least-specific runbook: for ad-hoc remediation the purpose-built
+# runbooks don't cover. It is NOT unlimited admin -- its blast radius is exactly the
+# runbook-l3-runner ClusterRole (pods/deployments/statefulsets/namespaces; NO
+# secrets, NO cluster-admin). Every kubectl call is RBAC-authorized against that SA
+# and recorded in the audit log, and it runs only after an L3 approval. The `review`
+# step prints the exact command + reason so the approver sees what they authorize
+# BEFORE resuming.
+# ponytail: guardrail is the l3-runner RBAC + approval gate, not command parsing.
+# To shrink the blast radius, tighten the runbook-l3-runner ClusterRole -- never add
+# secrets/* or wildcard verbs to it.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: run-command
+  namespace: argo-l3
+  labels: { runbook.level: "l3" }
+spec:
+  serviceAccountName: runbook-l3-runner   # <-- PINNED. RBAC-bounded identity.
+  entrypoint: main
+  arguments:
+    parameters:
+      # Read-only default. Override at submit time, e.g.:
+      #   -p command='kubectl rollout restart deploy/demo-app -n runbook-demo-dev'
+      - { name: command, value: "kubectl get deployments -A" }
+      - { name: reason,  value: "unspecified" }
+  templates:
+    - name: main
+      steps:
+        - - { name: review,   template: review }
+        - - { name: approval, template: await-approval }
+        - - { name: execute,  template: execute }
+
+    - name: review
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            echo "================ BREAK-GLASS: awaiting L3 approval ================"
+            echo "reason : {{workflow.parameters.reason}}"
+            echo "command: {{workflow.parameters.command}}"
+            echo "runs as: runbook-l3-runner  (RBAC-bounded, audited)"
+            echo "=================================================================="
+
+    # THE GATE. Resume requires patch on workflows in argo-l3 -> L3 only.
+    - name: await-approval
+      suspend: {}
+
+    - name: execute
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            echo "+ {{workflow.parameters.command}}"
+            {{workflow.parameters.command}}

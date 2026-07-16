@@ -1,0 +1,39 @@
+# L1 RUNBOOK -- read-only. Tails logs of an app's pods. No approval gate: reading
+# logs mutates nothing, and runbook-l1-runner already holds pods/log (get).
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: get-app-logs
+  namespace: argo
+  labels: { runbook.level: "l1" }
+spec:
+  serviceAccountName: runbook-l1-runner   # <-- PINNED. Read-only.
+  entrypoint: main
+  arguments:
+    parameters:
+      - { name: namespace, value: runbook-demo-dev }
+      - { name: app,       value: demo-app }
+      - { name: tailLines, value: "50" }
+  templates:
+    - name: main
+      inputs:
+        parameters:
+          - { name: namespace }
+          - { name: app }
+          - { name: tailLines }
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{inputs.parameters.namespace}}
+            APP={{inputs.parameters.app}}
+            TAIL={{inputs.parameters.tailLines}}
+            echo "=== pods for app=$APP in $NS ==="
+            kubectl get pods -n "$NS" -l app="$APP" \
+              -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,START:.status.startTime
+            echo
+            echo "=== last $TAIL log lines per pod (app=$APP) ==="
+            kubectl logs -n "$NS" -l app="$APP" --tail="$TAIL" --prefix --all-containers \
+              || { echo "no pods matched app=$APP in $NS"; exit 1; }

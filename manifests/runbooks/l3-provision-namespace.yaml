@@ -1,0 +1,75 @@
+# L3 RUNBOOK -- provision a new namespace. L3-ONLY: creating namespaces is a
+# cluster-scoped, high-privilege operation; the runbook-l3-runner is the only
+# runner granted `namespaces: create`. Gated in argo-l3, where L2 has no resume
+# rights. Idempotent (apply), and stamps managed-by/provisioned-by labels so
+# runbook-created namespaces are identifiable.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: provision-namespace
+  namespace: argo-l3
+  labels: { runbook.level: "l3" }
+spec:
+  serviceAccountName: runbook-l3-runner   # <-- PINNED.
+  entrypoint: main
+  arguments:
+    parameters:
+      - { name: newNamespace, value: team-sandbox }
+      - { name: team,         value: unassigned }
+  templates:
+    - name: main
+      steps:
+        - - { name: validate, template: validate }
+        - - { name: approval, template: await-approval }
+        - - { name: create,   template: create }
+        - - { name: verify,   template: verify }
+
+    - name: validate
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.newNamespace}}
+            # RFC-1123 label: lowercase alphanumeric and '-', must start/end alphanumeric.
+            echo "$NS" | grep -Eq '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' \
+              || { echo "FAIL: '$NS' is not a valid namespace name"; exit 1; }
+            case "$NS" in
+              kube-*|default|argo|argo-l3|runbook-demo-dev)
+                echo "FAIL: '$NS' is a protected/system namespace"; exit 1;;
+            esac
+            if kubectl get ns "$NS" >/dev/null 2>&1; then
+              echo "NOTE: namespace $NS already exists -- run will be a no-op relabel"
+            else
+              echo "PASS: $NS is free and will be created on approval"
+            fi
+
+    # THE GATE. Resume requires patch on workflows in argo-l3 -> L3 only.
+    - name: await-approval
+      suspend: {}
+
+    - name: create
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.newNamespace}}
+            TEAM={{workflow.parameters.team}}
+            # idempotent create
+            kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+            kubectl label namespace "$NS" \
+              managed-by=runbook provisioned-by=l3 "team=$TEAM" --overwrite
+            echo "provisioned namespace $NS (team=$TEAM)"
+
+    - name: verify
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.newNamespace}}
+            kubectl get namespace "$NS" -o 'custom-columns=NAME:.metadata.name,STATUS:.status.phase,TEAM:.metadata.labels.team,MANAGED:.metadata.labels.managed-by'

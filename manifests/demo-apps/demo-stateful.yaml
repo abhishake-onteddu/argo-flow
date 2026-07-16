@@ -1,0 +1,37 @@
+# Target for the L3 restart-statefulset runbook. Minimal on purpose -- like
+# demo-app, it exists to prove the approval gate, not to be a real workload.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: demo-stateful
+  namespace: runbook-demo-dev
+  labels: { app: demo-stateful }
+spec:
+  serviceName: demo-stateful
+  replicas: 2
+  selector:
+    matchLabels: { app: demo-stateful }
+  template:
+    metadata:
+      labels: { app: demo-stateful }
+    spec:
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 2
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits:   { cpu: 100m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-stateful
+  namespace: runbook-demo-dev
+spec:
+  clusterIP: None
+  selector: { app: demo-stateful }
+  ports: [{ port: 80, targetPort: 8080 }]

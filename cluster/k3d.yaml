@@ -1,0 +1,49 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: runbook-lab
+
+servers: 1
+agents: 1
+
+image: rancher/k3s:v1.31.4-k3s1
+
+registries:
+  create:
+    name: runbook-registry
+    host: "0.0.0.0"
+    hostPort: "5001"
+
+ports:
+  - port: 8080:80
+    nodeFilters:
+      - loadbalancer
+
+volumes:
+  # Audit policy is read by the API server inside the server node.
+  - volume: __REPO__/cluster/audit-policy.yaml:/var/lib/rancher/k3s/server/audit-policy.yaml
+    nodeFilters:
+      - server:*
+  # Audit log is written here so `make show-audit` can read it from the host.
+  - volume: __REPO__/.audit:/var/log/kubernetes
+    nodeFilters:
+      - server:*
+
+options:
+  k3s:
+    extraArgs:
+      - arg: --disable=traefik
+        nodeFilters:
+          - server:*
+      - arg: --kube-apiserver-arg=audit-policy-file=/var/lib/rancher/k3s/server/audit-policy.yaml
+        nodeFilters:
+          - server:*
+      - arg: --kube-apiserver-arg=audit-log-path=/var/log/kubernetes/audit.log
+        nodeFilters:
+          - server:*
+      - arg: --kube-apiserver-arg=audit-log-maxage=7
+        nodeFilters:
+          - server:*
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true

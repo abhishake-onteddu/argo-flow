@@ -1,0 +1,68 @@
+# L3 RUNBOOK -- restart a StatefulSet. L3-ONLY on purpose: the runbook-l3-runner
+# is the only runner granted `statefulsets` (L2's ClusterRole has deployments but
+# NOT statefulsets), so this operation cannot be executed by an L2 approval even
+# if someone tried. Lives in argo-l3, where L2 has no resume rights at all.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: restart-statefulset
+  namespace: argo-l3
+  labels: { runbook.level: "l3" }
+spec:
+  serviceAccountName: runbook-l3-runner   # <-- PINNED.
+  entrypoint: main
+  arguments:
+    parameters:
+      - { name: namespace,   value: runbook-demo-dev }
+      - { name: statefulset, value: demo-stateful }
+  templates:
+    - name: main
+      steps:
+        - - { name: precheck,  template: precheck }
+        - - { name: approval,  template: await-approval }
+        - - { name: restart,   template: restart }
+        - - { name: verify,    template: verify }
+
+    - name: precheck
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.namespace}}
+            SS={{workflow.parameters.statefulset}}
+            kubectl get statefulset "$SS" -n "$NS" >/dev/null \
+              || { echo "FAIL: statefulset $SS not found in $NS"; exit 1; }
+            READY=$(kubectl get statefulset "$SS" -n "$NS" -o jsonpath='{.status.readyReplicas}')
+            echo "PASS: $SS exists, readyReplicas=${READY:-0}"
+
+    # THE GATE. `argo resume` here requires patch on workflows in argo-l3,
+    # which only L3 holds. L2 cannot approve this.
+    - name: await-approval
+      suspend: {}
+
+    - name: restart
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.namespace}}
+            SS={{workflow.parameters.statefulset}}
+            kubectl rollout restart statefulset/"$SS" -n "$NS"
+            echo "restart annotation patched on $SS"
+
+    - name: verify
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.namespace}}
+            SS={{workflow.parameters.statefulset}}
+            kubectl rollout status statefulset/"$SS" -n "$NS" --timeout=180s
+            kubectl get pods -n "$NS" -l app="$SS" \
+              -o custom-columns=NAME:.metadata.name,START:.status.startTime

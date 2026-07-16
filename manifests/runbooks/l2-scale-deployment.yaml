@@ -1,0 +1,55 @@
+# L2 RUNBOOK -- scale, with a validated replica bound enforced BEFORE the gate.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: scale-deployment
+  namespace: argo
+  labels: { runbook.level: "l2" }
+spec:
+  serviceAccountName: runbook-l2-runner
+  entrypoint: main
+  arguments:
+    parameters:
+      - { name: namespace,  value: runbook-demo-dev }
+      - { name: deployment, value: demo-app }
+      - { name: replicas,   value: "3" }
+      - { name: maxReplicas, value: "5" }
+  templates:
+    - name: main
+      steps:
+        - - { name: validate, template: validate }
+        - - { name: approval, template: await-approval }
+        - - { name: scale,    template: scale }
+
+    - name: validate
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            R={{workflow.parameters.replicas}}
+            MAX={{workflow.parameters.maxReplicas}}
+            case "$R" in ''|*[!0-9]*) echo "FAIL: replicas not an integer"; exit 1;; esac
+            [ "$R" -ge 1 ]    || { echo "FAIL: scale-to-zero not permitted"; exit 1; }
+            [ "$R" -le "$MAX" ] || { echo "FAIL: $R exceeds max $MAX"; exit 1; }
+            kubectl get deploy {{workflow.parameters.deployment}} \
+              -n {{workflow.parameters.namespace}} >/dev/null \
+              || { echo "FAIL: unauthorized or missing deployment"; exit 1; }
+            echo "PASS: scaling to $R (max $MAX)"
+
+    - name: await-approval
+      suspend: {}
+
+    - name: scale
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            kubectl scale deploy/{{workflow.parameters.deployment}} \
+              -n {{workflow.parameters.namespace}} \
+              --replicas={{workflow.parameters.replicas}}
+            kubectl rollout status deploy/{{workflow.parameters.deployment}} \
+              -n {{workflow.parameters.namespace}} --timeout=120s

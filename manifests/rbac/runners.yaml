@@ -1,0 +1,151 @@
+# =============================================================================
+# RUNNER SERVICE ACCOUNTS
+#
+# These are the identities that workflow *pods* run as. They are pinned inside
+# WorkflowTemplates and can never be chosen by the submitter.
+#
+# Humans never hold these credentials. A human's only power is to *cause* a
+# workflow to run (L1) or to *release* a suspended one (L2/L3). The runner
+# does the actual work. That is the separation of request / approval /
+# execution the ADR describes.
+# =============================================================================
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argo-l3
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: runbook-demo-dev
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: runbook-l1-runner, namespace: argo }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: runbook-l2-runner, namespace: argo }
+---
+# L3's runner lives in a namespace L2 has no workflow permissions in.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: runbook-l3-runner, namespace: argo-l3 }
+
+# -----------------------------------------------------------------------------
+# L1 RUNNER -- strictly read-only, everywhere.
+# -----------------------------------------------------------------------------
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: runbook-l1-runner }
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  # Explicitly NOT granted: secrets, any write verb.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: runbook-l1-runner }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbook-l1-runner }
+subjects:
+  - { kind: ServiceAccount, name: runbook-l1-runner, namespace: argo }
+
+# -----------------------------------------------------------------------------
+# L2 RUNNER -- mutating, but bound with a RoleBinding so its power exists ONLY
+# inside runbook-demo-dev. Inert everywhere else in the cluster.
+# -----------------------------------------------------------------------------
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: runbook-l2-runner }
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: runbook-l2-runner, namespace: runbook-demo-dev }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbook-l2-runner }
+subjects:
+  - { kind: ServiceAccount, name: runbook-l2-runner, namespace: argo }
+
+# -----------------------------------------------------------------------------
+# L3 RUNNER -- same verbs as L2 ("same as L2, extended for higher-risk
+# operations" per the ADR). The difference is blast radius: cluster-wide.
+# -----------------------------------------------------------------------------
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: runbook-l3-runner }
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "namespaces"]
+    verbs: ["get", "list", "watch", "delete"]
+  # L3-only: provision new namespaces (create/patch). L2 has nothing here.
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale", "statefulsets/scale"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: runbook-l3-runner }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbook-l3-runner }
+subjects:
+  - { kind: ServiceAccount, name: runbook-l3-runner, namespace: argo-l3 }
+
+# -----------------------------------------------------------------------------
+# EXECUTOR PLUMBING -- Argo >=3.4 makes every workflow pod report its result via
+# a workflowtaskresults object in the namespace the pod runs in. This is Argo
+# bookkeeping, not a privilege grant, so it is scoped to argo / argo-l3 (where
+# runbook pods execute) and deliberately grants nothing on the target workloads.
+# -----------------------------------------------------------------------------
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: runbook-executor, namespace: argo }
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtaskresults"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: runbook-executor, namespace: argo }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbook-executor }
+subjects:
+  - { kind: ServiceAccount, name: runbook-l1-runner, namespace: argo }
+  - { kind: ServiceAccount, name: runbook-l2-runner, namespace: argo }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: runbook-executor, namespace: argo-l3 }
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtaskresults"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: runbook-executor, namespace: argo-l3 }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbook-executor }
+subjects:
+  - { kind: ServiceAccount, name: runbook-l3-runner, namespace: argo-l3 }

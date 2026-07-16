@@ -1,0 +1,82 @@
+# L2 RUNBOOK -- mutating. Suspends for approval before touching anything.
+#
+# Flow:  precheck (l1-runner, read-only)
+#          -> suspend            <-- L2 resumes here. THIS IS THE APPROVAL.
+#          -> restart (l2-runner, mutating)
+#          -> verify rollout
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: restart-deployment
+  namespace: argo
+  labels: { runbook.level: "l2" }
+spec:
+  serviceAccountName: runbook-l2-runner   # <-- PINNED.
+  entrypoint: main
+  arguments:
+    parameters:
+      - { name: namespace,  value: runbook-demo-dev }
+      - { name: deployment, value: demo-app }
+      # requestedBy is METADATA ONLY. It is not authoritative and nothing
+      # trusts it. The authoritative record is the k8s audit log entry for
+      # whoever created this Workflow object.
+      - { name: requestedBy, value: "unknown" }
+
+  templates:
+    - name: main
+      steps:
+        - - { name: precheck,  template: precheck }
+        - - { name: approval,  template: await-approval }
+        - - { name: restart,   template: restart }
+        - - { name: verify,    template: verify }
+
+    - name: precheck
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.namespace}}
+            DEP={{workflow.parameters.deployment}}
+            echo "Requested by (unverified metadata): {{workflow.parameters.requestedBy}}"
+            kubectl get deploy "$DEP" -n "$NS" >/dev/null \
+              || { echo "FAIL: deployment $DEP not found in $NS"; exit 1; }
+            READY=$(kubectl get deploy "$DEP" -n "$NS" -o jsonpath='{.status.readyReplicas}')
+            echo "PASS: $DEP exists, readyReplicas=${READY:-0}"
+            kubectl get pods -n "$NS" -l app="$DEP" \
+              -o custom-columns=NAME:.metadata.name,START:.status.startTime
+
+    # ------------------------------------------------------------------
+    # THE GATE. The workflow parks here indefinitely.
+    # `argo resume` = PATCH on this Workflow object = requires update/patch
+    # on argoproj.io/workflows in namespace `argo`. L1 does not have it.
+    # ------------------------------------------------------------------
+    - name: await-approval
+      suspend: {}
+
+    - name: restart
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.namespace}}
+            DEP={{workflow.parameters.deployment}}
+            kubectl rollout restart deploy/"$DEP" -n "$NS"
+            echo "restart annotation patched"
+
+    - name: verify
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            NS={{workflow.parameters.namespace}}
+            DEP={{workflow.parameters.deployment}}
+            kubectl rollout status deploy/"$DEP" -n "$NS" --timeout=120s
+            echo "=== new pod start times ==="
+            kubectl get pods -n "$NS" -l app="$DEP" \
+              -o custom-columns=NAME:.metadata.name,START:.status.startTime

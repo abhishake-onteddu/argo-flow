@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argo
+# Upstream Argo Workflows install, pulled as a remote base, then adjusted in place:
+#   - workflow-controller-configmap.yaml : strategic-merge patch that adds our
+#     workflowRestrictions (templateReferencing: Secure) + Entra SSO block into
+#     the configmap the install ships.
+#   - argo-server-patch.yaml : the declarative version of the old imperative
+#     `kubectl patch` dance (auth-mode sso+client, --secure=false, HTTP probe).
+#   - argo-server-sso.sealedsecret.yaml : Entra client id/secret, encrypted
+#     (regenerate with `make seal-secret`).
+resources:
+  - https://github.com/argoproj/argo-workflows/releases/download/v3.6.2/install.yaml
+  - argo-server-sso.sealedsecret.yaml
+patches:
+  - path: workflow-controller-configmap.yaml
+  - path: argo-server-patch.yaml
+    target:
+      kind: Deployment
+      name: argo-server

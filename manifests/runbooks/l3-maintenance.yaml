@@ -1,0 +1,52 @@
+# L3 RUNBOOK -- lives in namespace `argo-l3`, where L2 has NO permissions.
+# That namespace boundary is what makes "L2 cannot approve L3" enforceable.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: cross-namespace-maintenance
+  namespace: argo-l3
+  labels: { runbook.level: "l3" }
+spec:
+  serviceAccountName: runbook-l3-runner
+  entrypoint: main
+  arguments:
+    parameters:
+      - { name: namespace,  value: runbook-demo-dev }
+      - { name: deployment, value: demo-app }
+      - { name: replicas,   value: "1" }
+  templates:
+    - name: main
+      steps:
+        - - { name: precheck, template: precheck }
+        - - { name: approval, template: await-approval }
+        - - { name: execute,  template: execute }
+        - - { name: postcheck, template: postcheck }
+
+    - name: precheck
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args: ["kubectl get deploy -A -o wide | head -20"]
+
+    - name: await-approval
+      suspend: {}
+
+    - name: execute
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            kubectl scale deploy/{{workflow.parameters.deployment}} \
+              -n {{workflow.parameters.namespace}} \
+              --replicas={{workflow.parameters.replicas}}
+
+    - name: postcheck
+      container:
+        image: alpine/k8s:1.31.5
+        command: [sh, -c]
+        args:
+          - |
+            kubectl rollout status deploy/{{workflow.parameters.deployment}} \
+              -n {{workflow.parameters.namespace}} --timeout=120s
