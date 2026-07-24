@@ -184,7 +184,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: l1-user
-  namespace: argo
+  namespace: runbooks
   annotations:
     workflows.argoproj.io/rbac-rule: "'da9685fc-4f7a-4b8d-aec2-188338b1795b' in groups"
     workflows.argoproj.io/rbac-rule-precedence: "1"
@@ -253,7 +253,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: l1-user.service-account-token
-  namespace: argo
+  namespace: runbooks
   annotations: { kubernetes.io/service-account.name: l1-user }
 type: kubernetes.io/service-account-token
 ```

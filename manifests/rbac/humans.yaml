@@ -16,7 +16,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: l1-user
-  namespace: argo
+  namespace: runbooks
   annotations:
     # Matches the Entra security group "L1" by Object ID (the `groups` claim holds
     # GUIDs, not names). Add users to that Entra group to grant L1.
@@ -28,7 +28,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: l2-approver
-  namespace: argo
+  namespace: runbooks
   annotations:
     # L2 group: 2c23e798-8303-45f9-ba95-ec3cd362b63d
     workflows.argoproj.io/rbac-rule: "'2c23e798-8303-45f9-ba95-ec3cd362b63d' in groups"
@@ -38,7 +38,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: l3-approver
-  namespace: argo
+  namespace: runbooks
   annotations:
     # L3 group: 6faedd5d-be36-4c63-a7c9-57e7228aa423
     workflows.argoproj.io/rbac-rule: "'6faedd5d-be36-4c63-a7c9-57e7228aa423' in groups"
@@ -80,7 +80,7 @@ kind: ClusterRoleBinding
 metadata: { name: runbooks-l1 }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbooks-l1 }
 subjects:
-  - { kind: ServiceAccount, name: l1-user, namespace: argo }
+  - { kind: ServiceAccount, name: l1-user, namespace: runbooks }
 
 # =============================================================================
 # L2 -- everything L1 has, plus update/patch on workflows (i.e. resume).
@@ -107,7 +107,7 @@ kind: ClusterRoleBinding
 metadata: { name: runbooks-l2 }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbooks-l2 }
 subjects:
-  - { kind: ServiceAccount, name: l2-approver, namespace: argo }
+  - { kind: ServiceAccount, name: l2-approver, namespace: runbooks }
 
 # =============================================================================
 # L3 -- full cluster-wide rights (all namespaces, all workflow operations).
@@ -133,7 +133,7 @@ kind: ClusterRoleBinding
 metadata: { name: runbooks-l3 }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbooks-l3 }
 subjects:
-  - { kind: ServiceAccount, name: l3-approver, namespace: argo }
+  - { kind: ServiceAccount, name: l3-approver, namespace: runbooks }
 
 # =============================================================================
 # SA TOKEN SECRETS -- required for Argo Server SSO delegation.
@@ -150,7 +150,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: l1-user.service-account-token
-  namespace: argo
+  namespace: runbooks
   annotations: { kubernetes.io/service-account.name: l1-user }
 type: kubernetes.io/service-account-token
 ---
@@ -158,7 +158,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: l2-approver.service-account-token
-  namespace: argo
+  namespace: runbooks
   annotations: { kubernetes.io/service-account.name: l2-approver }
 type: kubernetes.io/service-account-token
 ---
@@ -166,6 +166,6 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: l3-approver.service-account-token
-  namespace: argo
+  namespace: runbooks
   annotations: { kubernetes.io/service-account.name: l3-approver }
 type: kubernetes.io/service-account-token

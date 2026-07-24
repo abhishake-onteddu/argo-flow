@@ -8,7 +8,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: restart-deployment
-  namespace: argo
+  namespace: runbooks
   labels: { runbook.level: "l2" }
 spec:
   serviceAccountName: runbook-l2-runner   # <-- PINNED.

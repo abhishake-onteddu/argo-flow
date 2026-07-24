@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: argo
+namespace: runbooks
 # Upstream Argo Workflows install, pulled as a remote base, then adjusted in place:
 #   - workflow-controller-configmap.yaml : strategic-merge patch that adds our
 #     workflowRestrictions (templateReferencing: Secure) + Entra SSO block into

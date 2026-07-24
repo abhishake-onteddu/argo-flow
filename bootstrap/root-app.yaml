@@ -5,7 +5,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: runbook-lab
-  namespace: argocd
+  namespace: runbookscd
 spec:
   project: default
   source:
@@ -14,6 +14,6 @@ spec:
     path: apps
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: runbookscd
   syncPolicy:
     automated: { prune: true, selfHeal: true }

@@ -13,7 +13,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: argo-l3
+  name: runbooks-l3
 ---
 apiVersion: v1
 kind: Namespace
@@ -22,16 +22,16 @@ metadata:
 ---
 apiVersion: v1
 kind: ServiceAccount
-metadata: { name: runbook-l1-runner, namespace: argo }
+metadata: { name: runbook-l1-runner, namespace: runbooks }
 ---
 apiVersion: v1
 kind: ServiceAccount
-metadata: { name: runbook-l2-runner, namespace: argo }
+metadata: { name: runbook-l2-runner, namespace: runbooks }
 ---
 # L3's runner lives in a namespace L2 has no workflow permissions in.
 apiVersion: v1
 kind: ServiceAccount
-metadata: { name: runbook-l3-runner, namespace: argo-l3 }
+metadata: { name: runbook-l3-runner, namespace: runbooks-l3 }
 
 # -----------------------------------------------------------------------------
 # L1 RUNNER -- strictly read-only, everywhere.
@@ -54,7 +54,7 @@ kind: ClusterRoleBinding
 metadata: { name: runbook-l1-runner }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbook-l1-runner }
 subjects:
-  - { kind: ServiceAccount, name: runbook-l1-runner, namespace: argo }
+  - { kind: ServiceAccount, name: runbook-l1-runner, namespace: runbooks }
 
 # -----------------------------------------------------------------------------
 # L2 RUNNER -- mutating, but bound with a RoleBinding so its power exists ONLY
@@ -80,7 +80,7 @@ kind: RoleBinding
 metadata: { name: runbook-l2-runner, namespace: runbook-demo-dev }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbook-l2-runner }
 subjects:
-  - { kind: ServiceAccount, name: runbook-l2-runner, namespace: argo }
+  - { kind: ServiceAccount, name: runbook-l2-runner, namespace: runbooks }
 
 # -----------------------------------------------------------------------------
 # L3 RUNNER -- same verbs as L2 ("same as L2, extended for higher-risk
@@ -110,7 +110,7 @@ kind: ClusterRoleBinding
 metadata: { name: runbook-l3-runner }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbook-l3-runner }
 subjects:
-  - { kind: ServiceAccount, name: runbook-l3-runner, namespace: argo-l3 }
+  - { kind: ServiceAccount, name: runbook-l3-runner, namespace: runbooks-l3 }
 
 # -----------------------------------------------------------------------------
 # EXECUTOR PLUMBING -- Argo >=3.4 makes every workflow pod report its result via
@@ -121,7 +121,7 @@ subjects:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
-metadata: { name: runbook-executor, namespace: argo }
+metadata: { name: runbook-executor, namespace: runbooks }
 rules:
   - apiGroups: ["argoproj.io"]
     resources: ["workflowtaskresults"]
@@ -129,15 +129,15 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
-metadata: { name: runbook-executor, namespace: argo }
+metadata: { name: runbook-executor, namespace: runbooks }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbook-executor }
 subjects:
-  - { kind: ServiceAccount, name: runbook-l1-runner, namespace: argo }
-  - { kind: ServiceAccount, name: runbook-l2-runner, namespace: argo }
+  - { kind: ServiceAccount, name: runbook-l1-runner, namespace: runbooks }
+  - { kind: ServiceAccount, name: runbook-l2-runner, namespace: runbooks }
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
-metadata: { name: runbook-executor, namespace: argo-l3 }
+metadata: { name: runbook-executor, namespace: runbooks-l3 }
 rules:
   - apiGroups: ["argoproj.io"]
     resources: ["workflowtaskresults"]
@@ -145,7 +145,7 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
-metadata: { name: runbook-executor, namespace: argo-l3 }
+metadata: { name: runbook-executor, namespace: runbooks-l3 }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbook-executor }
 subjects:
-  - { kind: ServiceAccount, name: runbook-l3-runner, namespace: argo-l3 }
+  - { kind: ServiceAccount, name: runbook-l3-runner, namespace: runbooks-l3 }

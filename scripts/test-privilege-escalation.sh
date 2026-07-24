@@ -21,7 +21,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: escalation-attempt-
-  namespace: argo
+  namespace: runbooks
 spec:
   serviceAccountName: runbook-l3-runner
   entrypoint: pwn

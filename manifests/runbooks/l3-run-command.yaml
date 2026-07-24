@@ -17,7 +17,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: run-command
-  namespace: argo-l3
+  namespace: runbooks-l3
   labels: { runbook.level: "l3" }
 spec:
   serviceAccountName: runbook-l3-runner   # <-- PINNED. RBAC-bounded identity.

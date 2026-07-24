@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: demo-apps
-  namespace: argocd
+  namespace: runbookscd
   annotations:
     argocd.argoproj.io/sync-wave: "2"   # runbook-demo-dev ns created in wave 1
 spec:

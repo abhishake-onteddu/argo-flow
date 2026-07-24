@@ -4,7 +4,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: get-app-logs
-  namespace: argo
+  namespace: runbooks
   labels: { runbook.level: "l1" }
 spec:
   serviceAccountName: runbook-l1-runner   # <-- PINNED. Read-only.

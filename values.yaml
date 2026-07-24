@@ -1,0 +1,56 @@
+global:
+  security:
+    allowInsecureImages: true
+
+controller:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/argo-workflow-controller
+    tag: 3.7.1-debian-12-r1
+
+server:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/argo-workflow-cli
+    tag: 3.7.1-debian-12-r1
+  auth:
+    mode: sso
+    sso:
+      enabled: true
+      config:
+        issuer: https://login.microsoftonline.com/913660be-17b8-4873-a229-33b0f747547e/v2.0
+        clientId:
+          name: argo-server-sso
+          key: client-id
+        clientSecret:
+          name: argo-server-sso
+          key: client-secret
+        redirectUrl: http://localhost:2746/oauth2/callback
+        scopes:
+          - openid
+          - profile
+          - email
+
+executor:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/argo-workflow-exec
+    tag: 3.7.1-debian-12-r1
+
+postgresql:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: 17.5.0-debian-12-r20
+
+# Plain (unencrypted) Secret holding the Entra client id/secret, hardcoded here
+# instead of via kubeseal/sealed-secrets. Referenced by server.auth.sso.config above.
+extraDeploy:
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: argo-server-sso
+    type: Opaque
+    stringData:
+      client-id: 
+      client-secret: 

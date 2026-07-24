@@ -3,7 +3,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: get-pod-status
-  namespace: argo
+  namespace: runbooks
   labels: { runbook.level: "l1" }
 spec:
   serviceAccountName: runbook-l1-runner   # <-- PINNED. Submitter cannot override.
