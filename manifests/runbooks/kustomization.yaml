@@ -4,6 +4,8 @@ kind: Kustomization
 resources:
   - l1-get-pod-status.yaml
   - l1-get-app-logs.yaml
+  - l1-check-storage-connections.yaml
+  - l1-cron-test.yaml
   - l2-restart-deployment.yaml
   - l2-scale-deployment.yaml
   - l3-maintenance.yaml

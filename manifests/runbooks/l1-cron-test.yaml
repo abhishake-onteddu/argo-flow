@@ -1,0 +1,29 @@
+# L1 RUNBOOK -- read-only, trivial. Just proves the CronWorkflow mechanism
+# (schedule, controller pickup, pod execution) works end-to-end before relying
+# on it for check-storage-connections, which needs extra RBAC first.
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: cron-test
+  namespace: runbooks
+  labels: { runbook.level: "l1" }
+spec:
+  schedule: "* * * * *"   # every minute
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 30
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  workflowSpec:
+    serviceAccountName: runbook-l1-runner
+    entrypoint: main
+    templates:
+      - name: main
+        container:
+          image: alpine/k8s:1.31.5
+          command: [sh, -c]
+          args:
+            - |
+              echo "cron-test tick at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo
+              echo "=== pod health check (runbook-demo-dev) ==="
+              kubectl get pods -n runbook-demo-dev -o wide

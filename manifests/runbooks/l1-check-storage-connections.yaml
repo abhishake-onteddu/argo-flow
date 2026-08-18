@@ -1,0 +1,38 @@
+# L1 RUNBOOK -- read-only. No approval gate. Runs on a schedule instead of
+# on-demand: periodic health check of the ClusterSecretStore and
+# BackupStorageLocation connections (item 2, "try cron workflows" from the
+# 2026-08-12 Argo Workflows meeting notes).
+#
+# NOTE: css (external-secrets.io ClusterSecretStore) and bsl (velero.io
+# BackupStorageLocation) are NOT in runbook-l1-runner's ClusterRole yet
+# (see manifests/rbac/runners.yaml) -- add read access for these two
+# apiGroups before this cron actually runs clean. That's meeting note
+# item 5, "connection-access rbac binding needs to be updated".
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: check-storage-connections
+  namespace: runbooks
+  labels: { runbook.level: "l1" }
+spec:
+  schedule: "0 * * * *"   # hourly
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  workflowSpec:
+    serviceAccountName: runbook-l1-runner   # <-- PINNED. Read-only.
+    entrypoint: main
+    templates:
+      - name: main
+        container:
+          image: alpine/k8s:1.31.5
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              echo "=== ClusterSecretStores ==="
+              kubectl get css
+              echo
+              echo "=== BackupStorageLocations (all namespaces) ==="
+              kubectl get bsl -A
