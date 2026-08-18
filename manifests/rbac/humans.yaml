@@ -21,7 +21,7 @@ metadata:
     # Matches the Entra security group "L1" by Object ID (the `groups` claim holds
     # GUIDs, not names). Add users to that Entra group to grant L1.
     # L1 group: da9685fc-4f7a-4b8d-aec2-188338b1795b
-    workflows.argoproj.io/rbac-rule: "'da9685fc-4f7a-4b8d-aec2-188338b1795b' in groups"
+    workflows.argoproj.io/rbac-rule: "'d16dd38c-b215-4e9b-9a23-40a2046d9dc8' in groups"
     workflows.argoproj.io/rbac-rule-precedence: "1"
 ---
 apiVersion: v1
@@ -31,7 +31,7 @@ metadata:
   namespace: runbooks
   annotations:
     # L2 group: 2c23e798-8303-45f9-ba95-ec3cd362b63d
-    workflows.argoproj.io/rbac-rule: "'2c23e798-8303-45f9-ba95-ec3cd362b63d' in groups"
+    workflows.argoproj.io/rbac-rule: "'5ebf475a-d7ea-477a-995b-f5bb3f8ade26' in groups"
     workflows.argoproj.io/rbac-rule-precedence: "2"
 ---
 apiVersion: v1
@@ -41,7 +41,7 @@ metadata:
   namespace: runbooks
   annotations:
     # L3 group: 6faedd5d-be36-4c63-a7c9-57e7228aa423
-    workflows.argoproj.io/rbac-rule: "'6faedd5d-be36-4c63-a7c9-57e7228aa423' in groups"
+    workflows.argoproj.io/rbac-rule: "'3b90db67-7706-44b8-b13b-1215790f90dd' in groups"
     workflows.argoproj.io/rbac-rule-precedence: "3"
 
 # =============================================================================

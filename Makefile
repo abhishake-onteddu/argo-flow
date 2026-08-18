@@ -6,7 +6,7 @@ ARGOCD_URL  := https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifes
 SEALED_URL  := https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.1/controller.yaml
 
 .DEFAULT_GOAL := help
-.PHONY: help preflight cluster bootstrap seal-secret set-repo gitops-up \
+.PHONY: help preflight cluster bootstrap seal-secret argo-sso-secret set-repo gitops-up \
         port-forward argocd-ui test-rbac test-l1 test-l2 test-escalation test-e2e \
         request-restart approve-as-l1 approve-as-l2 show-audit cleanup
 
@@ -55,6 +55,14 @@ seal-secret: ## Encrypt Entra creds into the committed SealedSecret. make seal-s
 	  kubeseal --controller-namespace kube-system --controller-name sealed-secrets-controller --format yaml \
 	  > manifests/argo-workflows/argo-server-sso.sealedsecret.yaml
 	@echo "sealed -> commit & push manifests/argo-workflows/argo-server-sso.sealedsecret.yaml"
+
+argo-sso-secret: ## Local/dev only: create the unsealed argo-server-sso secret directly (used by values.yaml's Helm install). make argo-sso-secret CLIENT_ID=.. CLIENT_SECRET=..
+	@test -n "$(CLIENT_ID)" -a -n "$(CLIENT_SECRET)" || { echo "usage: make argo-sso-secret CLIENT_ID=.. CLIENT_SECRET=.."; exit 1; }
+	$(KUBECTL) create namespace runbooks --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) create secret generic argo-server-sso -n runbooks \
+	  --from-literal=client-id=$(CLIENT_ID) --from-literal=client-secret=$(CLIENT_SECRET) \
+	  --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@echo "argo-server-sso applied in namespace runbooks (not written to any file, not committed)"
 
 set-repo: ## Point ArgoCD apps at your git repo. make set-repo REPO_URL=https://github.com/you/repo.git
 	@test -n "$(REPO_URL)" || { echo "usage: make set-repo REPO_URL=https://github.com/you/repo.git"; exit 1; }

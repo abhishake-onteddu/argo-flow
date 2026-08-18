@@ -14,11 +14,12 @@ server:
     repository: bitnamilegacy/argo-workflow-cli
     tag: 3.7.1-debian-12-r1
   auth:
-    mode: sso
+    enabled: true
+    mode: server
     sso:
-      enabled: true
+      enabled: false
       config:
-        issuer: https://login.microsoftonline.com/913660be-17b8-4873-a229-33b0f747547e/v2.0
+        issuer: https://login.microsoftonline.com/ea69751a-6de3-43d6-bb89-d5e5b8caad2d/v2.0
         clientId:
           name: argo-server-sso
           key: client-id
@@ -30,6 +31,15 @@ server:
           - openid
           - profile
           - email
+        # Bitnami chart v13.0.6's configmap template only renders
+        # server.auth.sso.config into the workflow-controller-configmap's
+        # `sso:` key -- it silently drops server.auth.sso.rbac, so the SSO
+        # RBAC namespace delegation feature (workflows.argoproj.io/rbac-rule)
+        # never activates and every SSO login falls back to the argo-server's
+        # own (broad) ServiceAccount. Nesting rbac here rides the same
+        # passthrough so it lands in the configmap's sso.rbac.enabled field.
+        # rbac:
+        #   enabled: true
 
 executor:
   image:
@@ -52,5 +62,5 @@ extraDeploy:
       name: argo-server-sso
     type: Opaque
     stringData:
-      client-id: 
-      client-secret: 
+      client-id: "e9bcbd83-4e58-4740-bf5a-02103b264f45"
+      client-secret: "65-8Q~odDB9WOcAg5PrgOMst0H4sL8LE.jDRSb9K"
